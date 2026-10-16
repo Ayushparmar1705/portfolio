@@ -1,0 +1,68 @@
+name: CI/CD - Build, Push & Deploy Docker
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/myapp:latest
+            ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}
+
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Deploy Application
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE: ${{ secrets.DOCKER_USERNAME }}/myapp
+          TAG: ${{ github.sha }}
+        with:
+          host: ${{ secrets.HOST_DNS }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: IMAGE,TAG
+          script: |
+            set -e
+
+            echo "Pulling Docker image..."
+            sudo docker pull "$IMAGE:$TAG"
+
+            echo "Removing old container..."
+            sudo docker rm -f myapp || true
+
+            echo "Starting new container..."
+            sudo docker run -d \
+              --name myapp \
+              --restart unless-stopped \
+              -p 8080:80 \
+              "$IMAGE:$TAG"
+
+            echo "Deployment completed!"
+            sudo docker ps
