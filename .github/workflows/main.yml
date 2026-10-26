@@ -1,5 +1,5 @@
 
-name: Deploy Website to EC2
+name: Deploy Website
 
 on:
   push:
@@ -13,31 +13,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: docker build -t my-website .
-
-      - name: Save Docker image
-        run: docker save my-website -o website.tar
-
-      - name: Copy image to EC2
-        uses: appleboy/scp-action@v0.1.7
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: website.tar
-          target: /home/ubuntu/
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Run website on EC2
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/my-website:latest
+
+      - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            docker load -i /home/ubuntu/website.tar
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/my-website:latest
             docker rm -f my-website || true
-            docker run -d --name my-website \
+            docker run -d \
+              --name my-website \
               --restart unless-stopped \
-              -p 80:80 my-website
-            rm -f /home/ubuntu/website.tar
+              -p 80:80 \
+              ${{ secrets.DOCKERHUB_USERNAME }}/my-website:latest
