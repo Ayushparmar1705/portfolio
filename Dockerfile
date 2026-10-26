@@ -1,5 +1,4 @@
-FROM httpd:2.4
-WORKDIR /usr/local/apache2/htdocs/ 
-COPY . /usr/local/apache2/htdocs/
-EXPOSE 80 
-CMD ["httpd-foreground"]
+FROM nginx:alpine
+WORKDIR /usr/share/nginx/html
+COPY . .
+EXPOSE 80
