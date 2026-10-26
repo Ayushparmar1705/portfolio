@@ -1,40 +1,43 @@
-name: CI/CD Pipeline with docker html, css
+
+name: Deploy Website to EC2
+
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+
 jobs:
-  build-and-test:
+  deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
+      - name: Build Docker image
+        run: docker build -t my-website .
 
-      - name: Check website files
-        run: |
-            test -f index.html
-            test -f style.css
+      - name: Save Docker image
+        run: docker save my-website -o website.tar
 
-      - name: Builder docker image
-        run: docker build -t my-website:latest
+      - name: Copy image to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: website.tar
+          target: /home/ubuntu/
 
-      - name: Docker container
-        run: docker run -d --name website-container -p 8080:80 my-website:latest
-
-      - name: Test website
-        run: |
-          for i in $(seq 1 10); do
-            if curl -fsS http://localhost:8080/ \
-              -o /tmp/website.html; then
-              break
-            fi
-            sleep 2
-          done
-
-          grep -qi "<html" /tmp/website.html
-      - name: Stop container
-        if: always()
-        run: docker rm -f website-test || true
+      - name: Run website on EC2
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker load -i /home/ubuntu/website.tar
+            docker rm -f my-website || true
+            docker run -d --name my-website \
+              --restart unless-stopped \
+              -p 80:80 my-website
+            rm -f /home/ubuntu/website.tar
